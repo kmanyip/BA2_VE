@@ -143,7 +143,7 @@ ep.case5$tot.case <- with(ep.case5, ifelse(Age_gp ==1, vcdose0tot.inf+vcdose1tot
 
 ep.case5$ep.case <- with(ep.case5, ifelse(Age_gp ==1, vcdose0tot.inf+vcdose1tot.inf/vcdose1rr + vcdose2tot.inf/vcdose2rr + vcdose4tot.inf/vcdose4rr, ifelse(Age_gp ==2, 
                                   vcdose0tot.inf+vcdose1tot.inf/vcdose1rr + vcdose2tot.inf/vcdose2rr + vcdose3tot.inf/vcdose3rr
-                                  +vcdose4tot.inf/vcdose4rr+ vcdose5tot.inf/vcdose5rr + vcdose6tot.inf/vcdose6rr,NA )))
+                                  +vcdose4tot.inf/vcdose4rr+ vcdose5tot.inf/vcdose3rr + vcdose6tot.inf/vcdose4rr,NA )))
 
 ep.case5$ep.case2.5 <- with(ep.case5, ifelse(Age_gp ==1, vcdose0tot.inf+vcdose1tot.inf/vcdose1rr2.5 + vcdose2tot.inf/vcdose2rr2.5 + vcdose4tot.inf/vcdose4rr2.5, ifelse(Age_gp ==2, 
                                                               vcdose0tot.inf+vcdose1tot.inf/vcdose1rr2.5 + vcdose2tot.inf/vcdose2rr2.5 + vcdose3tot.inf/vcdose3rr2.5
