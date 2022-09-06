@@ -7,7 +7,7 @@ library(tidyverse)
 
 setwd("D:/vaccination")
 
-df <- read.xlsx("dataset_aggregated.xlsx")
+df <- read.xlsx("dataset_v2.xlsx")
 
 #Sex: 1= M, 2 = F
 #Age group: 1: 3-11, 2= 12-18
@@ -97,7 +97,7 @@ t.g1$ve <- (1- t.g1$rr)*100
 t.g1$ve2.5 <- (1- t.g1$rr2.5)*100
 t.g1$ve97.5 <- (1- t.g1$rr97.5)*100
 
-t.g1.2 <- dplyr::select(t.g1, c("coeff", "ve"))
+t.g1.2 <- dplyr::select(t.g1, c("coeff", "rr", "rr2.5", "rr97.5"))
 t.g1.2$Age_gp = "1"
 
 #Age group: 12-18
@@ -115,29 +115,40 @@ t.g2$ve <- (1- t.g2$rr)*100
 t.g2$ve2.5 <- (1- t.g2$rr2.5)*100
 t.g2$ve97.5 <- (1- t.g2$rr97.5)*100
 
-t.g2.2 <- dplyr::select(t.g2, c("coeff", "ve"))
+t.g2.2 <- dplyr::select(t.g2, c("coeff", "rr", "rr2.5", "rr97.5"))
 t.g2.2$Age_gp = "2"
 
-ve <- rbind(t.g1.2, t.g2.2)
-colnames(ve) <- c("vcdose", "ve", "Age_gp")
+rr <- rbind(t.g1.2, t.g2.2)
+colnames(rr) <- c("vcdose", "rr", "rr2.5", "rr97.5", "Age_gp")
 
 #daily expected number
-df %>% group_by(Date, Age_gp,vcdose) %>% summarize(tot.inf = sum(infection.no, na.rm=T)) -> ep.case
+df %>% dplyr::group_by(Date, Age_gp,vcdose) %>% summarize(tot.inf = sum(infection.no, na.rm=T)) -> ep.case
 ep.case$vcdose <- paste0("vcdose", ep.case$vcdose)
 
-ep.case2 <- merge(ep.case, ve, by = c("vcdose", "Age_gp"), all.x=T)
-ep.case2$ve <- ep.case2$ve/100
-ep.case2$ve <- with(ep.case2, ifelse((ve <=0 & !is.na(ve)) | vcdose == "vcdose0", 1, ve))
+ep.case2 <- merge(ep.case, rr, by = c("vcdose", "Age_gp"), all.x=T)
+ep.case2$rr <- with(ep.case2, ifelse((rr >=1 & !is.na(rr)) | vcdose == "vcdose0", 1, rr))
+ep.case2$rr2.5 <- with(ep.case2, ifelse((rr2.5 >=1 & !is.na(rr2.5)) | vcdose == "vcdose0", 1, rr2.5))
+ep.case2$rr97.5 <- with(ep.case2, ifelse((rr97.5 >=1 & !is.na(rr97.5)) | vcdose == "vcdose0", 1, rr97.5))
 
-ep.case3 <- subset(ep.case2, !is.na(ve))
+ep.case3 <- subset(ep.case2, !is.na(rr) | !is.na(rr2.5) | !is.na(rr97.5))
 
-ep.case3 %>% gather(var, value, tot.inf:ve) -> ep.case4
+ep.case3 %>% gather(var, value, tot.inf:rr97.5) -> ep.case4
 ep.case4$id <- paste0(ep.case4$vcdose, ep.case4$var)
 
 ep.case4 %>% dplyr::select(-c("var", "vcdose")) %>% spread(id, value) -> ep.case5
 
-ep.case5$ep.case <- with(ep.case5, ifelse(Age_gp ==1, vcdose0tot.inf+vcdose1tot.inf/vcdose1ve + vcdose2tot.inf/vcdose2ve + vcdose4tot.inf/vcdose4ve, ifelse(Age_gp ==2, 
-                                  vcdose0tot.inf+vcdose1tot.inf/vcdose1ve + vcdose2tot.inf/vcdose2ve + vcdose3tot.inf/vcdose3ve
-                                  +vcdose4tot.inf/vcdose4ve+ vcdose5tot.inf/vcdose5ve + vcdose6tot.inf/vcdose6ve,NA )))
+ep.case5$tot.case <- with(ep.case5, ifelse(Age_gp ==1, vcdose0tot.inf+vcdose1tot.inf + vcdose2tot.inf + vcdose4tot.inf, ifelse(Age_gp ==2, 
+                                                   vcdose0tot.inf+vcdose1tot.inf + vcdose2tot.inf+ vcdose3tot.inf
+                                                     +vcdose4tot.inf+ vcdose5tot.inf + vcdose6tot.inf,NA )))
 
+ep.case5$ep.case <- with(ep.case5, ifelse(Age_gp ==1, vcdose0tot.inf+vcdose1tot.inf/vcdose1rr + vcdose2tot.inf/vcdose2rr + vcdose4tot.inf/vcdose4rr, ifelse(Age_gp ==2, 
+                                  vcdose0tot.inf+vcdose1tot.inf/vcdose1rr + vcdose2tot.inf/vcdose2rr + vcdose3tot.inf/vcdose3rr
+                                  +vcdose4tot.inf/vcdose4rr+ vcdose5tot.inf/vcdose5rr + vcdose6tot.inf/vcdose6rr,NA )))
 
+ep.case5$ep.case2.5 <- with(ep.case5, ifelse(Age_gp ==1, vcdose0tot.inf+vcdose1tot.inf/vcdose1rr2.5 + vcdose2tot.inf/vcdose2rr2.5 + vcdose4tot.inf/vcdose4rr2.5, ifelse(Age_gp ==2, 
+                                                              vcdose0tot.inf+vcdose1tot.inf/vcdose1rr2.5 + vcdose2tot.inf/vcdose2rr2.5 + vcdose3tot.inf/vcdose3rr2.5
+                                                                    +vcdose4tot.inf/vcdose4rr2.5+ vcdose5tot.inf/vcdose3rr2.5 + vcdose6tot.inf/vcdose4rr2.5,NA )))
+
+ep.case5$ep.case97.5 <- with(ep.case5, ifelse(Age_gp ==1, vcdose0tot.inf+vcdose1tot.inf/vcdose1rr97.5 + vcdose2tot.inf/vcdose2rr97.5 + vcdose4tot.inf/vcdose4rr97.5, ifelse(Age_gp ==2, 
+                                                vcdose0tot.inf+vcdose1tot.inf/vcdose1rr97.5 + vcdose2tot.inf/vcdose2rr97.5 + vcdose3tot.inf/vcdose3rr97.5
+                                                              +vcdose4tot.inf/vcdose4rr97.5+ vcdose5tot.inf/vcdose3rr97.5 + vcdose6tot.inf/vcdose4rr97.5,NA )))
