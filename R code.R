@@ -4,10 +4,11 @@ library(data.table)
 library(MASS)
 library(tibble)
 library(tidyverse)
+library(metafor)
 
 setwd("D:/vaccination")
 
-df <- read.xlsx("dataset_v2.xlsx")
+df <- read.xlsx("submitted/dataset_v2.xlsx")
 
 #Sex: 1= M, 2 = F
 #Age group: 1: 3-11, 2= 12-18
@@ -91,13 +92,14 @@ ci <- as.data.frame(confint(m1, level=0.95))
 ci <- tibble::rownames_to_column(ci, "coeff")
 t.g1 <- merge(t.g1, ci, by = "coeff")
 t.g1$rr <- exp(t.g1$Estimate)
+t.g1$rr.se <- exp(t.g1$`Std. Error`)
 t.g1$rr2.5 <- exp(t.g1$`2.5 %`)
 t.g1$rr97.5 <- exp(t.g1$`97.5 %`)
 t.g1$ve <- (1- t.g1$rr)*100
 t.g1$ve2.5 <- (1- t.g1$rr2.5)*100
 t.g1$ve97.5 <- (1- t.g1$rr97.5)*100
 
-t.g1.2 <- dplyr::select(t.g1, c("coeff", "rr", "rr2.5", "rr97.5"))
+t.g1.2 <- dplyr::select(t.g1, c("coeff", "rr", "rr.se"))
 t.g1.2$Age_gp = "1"
 
 #Age group: 12-18
@@ -109,30 +111,54 @@ ci2 <- as.data.frame(confint(m2, level=0.95))
 ci2 <- tibble::rownames_to_column(ci2, "coeff")
 t.g2 <- merge(t.g2, ci2, by = "coeff")
 t.g2$rr <- exp(t.g2$Estimate)
+t.g2$rr.se <- exp(t.g2$`Std. Error`)
 t.g2$rr2.5 <- exp(t.g2$`2.5 %`)
 t.g2$rr97.5 <- exp(t.g2$`97.5 %`)
 t.g2$ve <- (1- t.g2$rr)*100
 t.g2$ve2.5 <- (1- t.g2$rr2.5)*100
 t.g2$ve97.5 <- (1- t.g2$rr97.5)*100
 
-t.g2.2 <- dplyr::select(t.g2, c("coeff", "rr", "rr2.5", "rr97.5"))
+t.g2.2 <- dplyr::select(t.g2, c("coeff", "rr", "rr.se"))
 t.g2.2$Age_gp = "2"
 
 rr <- rbind(t.g1.2, t.g2.2)
-colnames(rr) <- c("vcdose", "rr", "rr2.5", "rr97.5", "Age_gp")
+colnames(rr) <- c("vcdose", "rr", "rr.se", "Age_gp")
 
-#daily expected number
+############## calculate pooled IRR ######################
+t.g1.3 <- t.g1.2[3:5,]
+t.g1.3 <- subset(t.g1.3, coeff != "vcdose2")
+t.g1.3$rr <- log(t.g1.3$rr)
+t.g1.3$rr.se <- log(t.g1.3$rr.se)
+res<- rma(rr, rr.se, method='FE', measure='PR',data=t.g1.3)
+g1.rr.pooled <- as.data.frame(predict(res, transf=exp, digits=3))
+g1.rr.pooled$Age_gp <- 1
+
+t.g2.3 <- t.g2.2[3:8,]
+###use VE of dose 2 to replace dose 3
+t.g2.3$rr[5] <- t.g2.3$rr[3]
+t.g2.3$rr[6] <- t.g2.3$rr[4]
+t.g2.3$rr.se[5] <- t.g2.3$rr.se[3]
+t.g2.3$rr.se[6] <- t.g2.3$rr.se[4]
+t.g2.3$rr <- log(t.g2.3$rr)
+t.g2.3$rr.se <- log(t.g2.3$rr.se)
+
+res<- rma(rr, rr.se, method='FE', measure='PR',data=t.g2.3)
+g2.rr.pooled <- as.data.frame(predict(res, transf=exp, digits=3))
+g2.rr.pooled$Age_gp <- 2
+
+rr.pooled <- rbind(g1.rr.pooled, g2.rr.pooled)
+
+#####################daily expected number
 df %>% dplyr::group_by(Date, Age_gp,vcdose) %>% summarize(tot.inf = sum(infection.no, na.rm=T)) -> ep.case
 ep.case$vcdose <- paste0("vcdose", ep.case$vcdose)
 
 ep.case2 <- merge(ep.case, rr, by = c("vcdose", "Age_gp"), all.x=T)
-ep.case2$rr <- with(ep.case2, ifelse((rr >=1 & !is.na(rr)) | vcdose == "vcdose0", 1, rr))
-ep.case2$rr2.5 <- with(ep.case2, ifelse((rr2.5 >=1 & !is.na(rr2.5)) | vcdose == "vcdose0", 1, rr2.5))
-ep.case2$rr97.5 <- with(ep.case2, ifelse((rr97.5 >=1 & !is.na(rr97.5)) | vcdose == "vcdose0", 1, rr97.5))
+ep.case2$rr <- with(ep.case2, ifelse(is.na(rr),1, rr))
+ep.case2 <- dplyr::select(ep.case2, -"rr.se")
 
-ep.case3 <- subset(ep.case2, !is.na(rr) | !is.na(rr2.5) | !is.na(rr97.5))
+ep.case2 <- merge(ep.case2, rr.pooled, by = "Age_gp", all.x=T)
 
-ep.case3 %>% gather(var, value, tot.inf:rr97.5) -> ep.case4
+ep.case2 %>% gather(var, value, tot.inf:rr) -> ep.case4
 ep.case4$id <- paste0(ep.case4$vcdose, ep.case4$var)
 
 ep.case4 %>% dplyr::select(-c("var", "vcdose")) %>% spread(id, value) -> ep.case5
@@ -141,14 +167,19 @@ ep.case5$tot.case <- with(ep.case5, ifelse(Age_gp ==1, vcdose0tot.inf+vcdose1tot
                                                    vcdose0tot.inf+vcdose1tot.inf + vcdose2tot.inf+ vcdose3tot.inf
                                                      +vcdose4tot.inf+ vcdose5tot.inf + vcdose6tot.inf,NA )))
 
-ep.case5$ep.case <- with(ep.case5, ifelse(Age_gp ==1, vcdose0tot.inf+vcdose1tot.inf/vcdose1rr + vcdose2tot.inf/vcdose2rr + vcdose4tot.inf/vcdose4rr, ifelse(Age_gp ==2, 
-                                  vcdose0tot.inf+vcdose1tot.inf/vcdose1rr + vcdose2tot.inf/vcdose2rr + vcdose3tot.inf/vcdose3rr
-                                  +vcdose4tot.inf/vcdose4rr+ vcdose5tot.inf/vcdose3rr + vcdose6tot.inf/vcdose4rr,NA )))
+ep.case5$ep.case <- with(ep.case5, ifelse(Age_gp ==1, vcdose0tot.inf+ vcdose2tot.inf+ vcdose1tot.inf/vcdose1rr + vcdose4tot.inf/vcdose4rr, ifelse(Age_gp ==2, 
+                                  vcdose0tot.inf+ vcdose1tot.inf/vcdose1rr  + vcdose2tot.inf/vcdose2rr + (vcdose3tot.inf+ vcdose5tot.inf )/vcdose3rr
+                                  + (vcdose4tot.inf+ vcdose6tot.inf)/vcdose4rr ,NA )))
 
-ep.case5$ep.case2.5 <- with(ep.case5, ifelse(Age_gp ==1, vcdose0tot.inf+vcdose1tot.inf/vcdose1rr2.5 + vcdose2tot.inf/vcdose2rr2.5 + vcdose4tot.inf/vcdose4rr2.5, ifelse(Age_gp ==2, 
-                                                              vcdose0tot.inf+vcdose1tot.inf/vcdose1rr2.5 + vcdose2tot.inf/vcdose2rr2.5 + vcdose3tot.inf/vcdose3rr2.5
-                                                                    +vcdose4tot.inf/vcdose4rr2.5+ vcdose5tot.inf/vcdose3rr2.5 + vcdose6tot.inf/vcdose4rr2.5,NA )))
 
-ep.case5$ep.case97.5 <- with(ep.case5, ifelse(Age_gp ==1, vcdose0tot.inf+vcdose1tot.inf/vcdose1rr97.5 + vcdose2tot.inf/vcdose2rr97.5 + vcdose4tot.inf/vcdose4rr97.5, ifelse(Age_gp ==2, 
-                                                vcdose0tot.inf+vcdose1tot.inf/vcdose1rr97.5 + vcdose2tot.inf/vcdose2rr97.5 + vcdose3tot.inf/vcdose3rr97.5
-                                                              +vcdose4tot.inf/vcdose4rr97.5+ vcdose5tot.inf/vcdose3rr97.5 + vcdose6tot.inf/vcdose4rr97.5,NA )))
+ep.case5$ep.case97.5 <- with(ep.case5, ifelse(Age_gp ==1, vcdose0tot.inf+ vcdose2tot.inf + (vcdose1tot.inf +  vcdose4tot.inf)/ci.lb, ifelse(Age_gp ==2, 
+                           vcdose0tot.inf+(vcdose1tot.inf + vcdose2tot.inf + vcdose3tot.inf
+                        +vcdose4tot.inf+ vcdose5tot.inf + vcdose6tot.inf)/ci.lb,NA )))
+
+
+ep.case5$ep.case2.5 <- with(ep.case5, ifelse(Age_gp ==1, vcdose0tot.inf+ vcdose2tot.inf + (vcdose1tot.inf + vcdose4tot.inf)/ci.ub, ifelse(Age_gp ==2, 
+                         vcdose0tot.inf+(vcdose1tot.inf + vcdose2tot.inf + vcdose3tot.inf
+                                  +vcdose4tot.inf+ vcdose5tot.inf + vcdose6tot.inf)/ci.ub,NA )))
+                                         
+
+
