@@ -7,7 +7,9 @@ library(tidyverse)
 library(metafor)
 library(boot)
 
-df <- read.xlsx("dataset_v2.xlsx")
+setwd("D:/vaccination")
+
+df <- read.xlsx("submitted/dataset_v2.xlsx")
 
 #Sex: 1= M, 2 = F
 #Age group: 1: 3-11, 2= 12-18
@@ -89,6 +91,19 @@ t.g1 <- as.data.frame(summary(m1)$coefficients)
 t.g1 <- tibble::rownames_to_column(t.g1, "coeff")
 t.g1$rr <- exp(t.g1$Estimate)
 t.g1$ve <- (1- t.g1$rr)*100
+ci <- as.data.frame(confint(m1, level=0.95))
+ci <- tibble::rownames_to_column(ci, "coeff")
+t.g1 <- merge(t.g1, ci, by = "coeff")
+t.g1$rr <- exp(t.g1$Estimate)
+t.g1$rr.se <- exp(t.g1$`Std. Error`)
+t.g1$rr2.5 <- exp(t.g1$`2.5 %`)
+t.g1$rr97.5 <- exp(t.g1$`97.5 %`)
+t.g1$ve <- (1- t.g1$rr)*100
+t.g1$ve2.5 <- (1- t.g1$rr2.5)*100
+t.g1$ve97.5 <- (1- t.g1$rr97.5)*100
+
+t.g1.2 <- dplyr::select(t.g1, c("coeff", "rr"))
+t.g1.2$Age_gp = "1"
 
 #Age group: 12-18
 df.g2 <- subset(df, Age_gp == 2 & log.pop != -Inf )
@@ -97,6 +112,22 @@ t.g2 <- as.data.frame(summary(m2)$coefficients)
 t.g2 <- tibble::rownames_to_column(t.g2, "coeff")
 t.g2$rr <- exp(t.g2$Estimate)
 t.g2$ve <- (1- t.g2$rr)*100
+ci2 <- as.data.frame(confint(m2, level=0.95))
+ci2 <- tibble::rownames_to_column(ci2, "coeff")
+t.g2 <- merge(t.g2, ci2, by = "coeff")
+t.g2$rr <- exp(t.g2$Estimate)
+t.g2$rr.se <- exp(t.g2$`Std. Error`)
+t.g2$rr2.5 <- exp(t.g2$`2.5 %`)
+t.g2$rr97.5 <- exp(t.g2$`97.5 %`)
+t.g2$ve <- (1- t.g2$rr)*100
+t.g2$ve2.5 <- (1- t.g2$rr2.5)*100
+t.g2$ve97.5 <- (1- t.g2$rr97.5)*100
+
+t.g2.2 <- dplyr::select(t.g2, c("coeff", "rr"))
+t.g2.2$Age_gp = "2"
+
+rr <- rbind(t.g1.2, t.g2.2)
+colnames(rr) <- c("vcdose", "rr", "Age_gp")
 
 ## Bootstrapped CI
 #Age group: 3-11
@@ -123,30 +154,15 @@ rs<- rma(rr, rr.se, method='FE', measure='PR',data=bt.g1.3)
 g1.rr.pooled <- NULL
 g1.rr.pooled <- predict(rs, transf=exp, digits=3)$pred
 
-bt.g1.4 <- dplyr::select(bt.g1, c("coeff", "rr"))
-
-return(c(v11 =bt.g1.4$rr[3] , v12 =bt.g1.4$rr[4], v14 =bt.g1.4$rr[5], pooled.rr1 = g1.rr.pooled))
+return(pooled.rr1 = g1.rr.pooled)
 }
 
 rr.g1 <- boot(df.g1, fun, R=1000)
 
-col <- c("vcdose1", "vcdose2", "vcdose4", "pooled.rr")
-
-rr.g1.2 <- as.data.frame(t(boot.ci(rr.g1, type="norm", index=1)$normal[,2:3]))
-rr.g1.2$vcdose <- col[1]
-
-for(k in 2:4){
-temp <- as.data.frame(t(boot.ci(rr.g1, type="norm", index=k)$normal[,2:3]))
-temp$vcdose <- col[k]
-
-rr.g1.2 <- rbind(rr.g1.2, temp)
-}
+rr.g1.2 <- as.data.frame(t(boot.ci(rr.g1, type="norm")$normal[,2:3]))
+rr.g1.2$vcdose <- "pooled.rr"
 
 colnames(rr.g1.2) <- c("ci.lb", "ci.ub", "vcdose")
-
-rr.g1.2$ve.ci.ub <- (1-rr.g1.2$ci.lb)*100
-rr.g1.2$ve.ci.lb <- (1-rr.g1.2$ci.ub)*100
-rr.g1.2$rr <- rr.g1$t0
 
 rr.g1.2$Age_gp <- 1
 
@@ -164,10 +180,6 @@ bt.g2$rr.se <- exp(bt.g2$`Std. Error`)
 bt.g2.2 <- dplyr::select(bt.g2, c("coeff", "rr", "rr.se"))
 bt.g2.2$Age_gp = "2"
 
-rr <- rbind(bt.g1.2, bt.g2.2)
-colnames(rr) <- c("vcdose", "rr", "rr.se", "Age_gp")
-
-
 bt.g2.3 <- bt.g2.2[3:8,]
 ###use VE of dose 2 to replace dose 3
 bt.g2.3$rr[5] <- bt.g2.3$rr[3]
@@ -181,43 +193,28 @@ rs<- rma(rr, rr.se, method='FE', measure='PR',data=bt.g2.3)
 g2.rr.pooled <- NULL
 g2.rr.pooled <- predict(rs, transf=exp, digits=3)$pred
 
-bt.g2.4 <- dplyr::select(bt.g2, c("coeff", "rr"))
-
-return(c(v21 =bt.g2.4$rr[3] , v22 =bt.g2.4$rr[4], v23 =bt.g2.4$rr[5], v24 =bt.g2.4$rr[6],pooled.rr1 = g2.rr.pooled))
+return(pooled.rr1 = g2.rr.pooled)
 }
 
 rr.g2 <- boot(df.g2, fun, R=1000)
 
-col <- c("vcdose1", "vcdose2", "vcdose3", "vcdose4", "pooled.rr")
-
 rr.g2.2 <- as.data.frame(t(boot.ci(rr.g2, type="norm", index=1)$normal[,2:3]))
-rr.g2.2$vcdose <- col[1]
-
-for(k in 2:5){
-  temp <- as.data.frame(t(boot.ci(rr.g2, type="norm", index=k)$normal[,2:3]))
-  temp$vcdose <- col[k]
-  
-  rr.g2.2 <- rbind(rr.g2.2, temp)
-}
+rr.g2.2$vcdose <- "pooled.rr"
 
 colnames(rr.g2.2) <- c("ci.lb", "ci.ub", "vcdose")
 
-rr.g2.2$ve.ci.ub <- (1-rr.g2.2$ci.lb)*100
-rr.g2.2$ve.ci.lb <- (1-rr.g2.2$ci.ub)*100
-rr.g2.2$rr <- rr.g2$t0
-
 rr.g2.2$Age_gp <- 2
 
-rr <- rbind(rr.g1.2, rr.g2.2)
+pooled.rr <- dplyr::select(rbind(rr.g1.2, rr.g2.2), - "vcdose")
 
-pooled.rr <- dplyr::select(subset(rr, vcdose == "pooled.rr"), c("Age_gp", "ci.lb", "ci.ub"))
-vcdose <- dplyr::select(subset(rr, vcdose != "pooled.rr"), c("vcdose", "rr", "Age_gp"))
+# pooled.rr <- dplyr::select(subset(rr, vcdose == "pooled.rr"), c("Age_gp", "ci.lb", "ci.ub"))
+# vcdose <- dplyr::select(subset(rr, vcdose != "pooled.rr"), c("vcdose", "rr", "Age_gp"))
 
 #####################daily expected number
 df %>% dplyr::group_by(Date, Age_gp,vcdose) %>% summarize(tot.inf = sum(infection.no, na.rm=T)) -> ep.case
 ep.case$vcdose <- paste0("vcdose", ep.case$vcdose)
 
-ep.case2 <- merge(ep.case, vcdose, by = c("vcdose", "Age_gp"), all.x=T)
+ep.case2 <- merge(ep.case, rr, by = c("vcdose", "Age_gp"), all.x=T)
 ep.case2$rr <- with(ep.case2, ifelse(is.na(rr),1, rr))
 
 ep.case2 <- merge(ep.case2, pooled.rr, by = "Age_gp", all.x=T)
@@ -244,6 +241,6 @@ ep.case5$ep.case97.5 <- with(ep.case5, ifelse(Age_gp ==1, vcdose0tot.inf+ vcdose
 ep.case5$ep.case2.5 <- with(ep.case5, ifelse(Age_gp ==1, vcdose0tot.inf+ vcdose2tot.inf + (vcdose1tot.inf + vcdose4tot.inf)/ci.ub, ifelse(Age_gp ==2, 
                          vcdose0tot.inf+(vcdose1tot.inf + vcdose2tot.inf + vcdose3tot.inf
                                   +vcdose4tot.inf+ vcdose5tot.inf + vcdose6tot.inf)/ci.ub,NA )))
-                                         
 
 
+                                      
